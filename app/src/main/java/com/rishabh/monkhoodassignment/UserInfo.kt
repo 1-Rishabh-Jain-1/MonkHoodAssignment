@@ -33,23 +33,16 @@ import java.io.IOException
 import java.util.Calendar
 import java.util.UUID
 
-
 class UserInfo : AppCompatActivity() {
     private lateinit var binding : ActivityUserInfoBinding
-    private lateinit var pd: ProgressDialog
-
-    private lateinit var userId : String
+    private var imgUri: Uri? = null
+    private lateinit var firestore : FirebaseFirestore
+    private lateinit var firebaseStorage: FirebaseStorage
+    private lateinit var progressDialog: ProgressDialog
     private var imgBitmap : Bitmap? = null
     private lateinit var sharedPreferences : SharedPreferences
-
-    private var uri: Uri? = null
     private lateinit var firebaseStorageReference: StorageReference
-    private lateinit var firebaseStorage: FirebaseStorage
-    private lateinit var firestore : FirebaseFirestore
-
-    private enum class IMAGE_MODE{
-        OPEN_CAMERA, OPEN_EXT_STORAGE
-    }
+    private lateinit var userId : String
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,7 +50,7 @@ class UserInfo : AppCompatActivity() {
         setContentView(binding.root)
 
         sharedPreferences = this.getSharedPreferences("Users", Context.MODE_PRIVATE)
-        pd = ProgressDialog(this)
+        progressDialog = ProgressDialog(this)
         firestore = FirebaseFirestore.getInstance()
         firebaseStorage = FirebaseStorage.getInstance()
         firebaseStorageReference = firebaseStorage.reference
@@ -72,21 +65,21 @@ class UserInfo : AppCompatActivity() {
         }
 
 
-        val calenderdate = Calendar.getInstance()
-        val datePicker = DatePickerDialog.OnDateSetListener { view, year, month, date ->
-            calenderdate.set(Calendar.YEAR,year)
-            calenderdate.set(Calendar.MONTH,month)
-            calenderdate.set(Calendar.DAY_OF_MONTH,date)
-            updatedatelabel(calenderdate,binding.textViewDOB)
+        val calender = Calendar.getInstance()
+        val datePicker = DatePickerDialog.OnDateSetListener { _, year, month, date ->
+            calender.set(Calendar.YEAR,year)
+            calender.set(Calendar.MONTH,month)
+            calender.set(Calendar.DAY_OF_MONTH,date)
+            updatedatelabel(calender,binding.textViewDOB)
         }
 
         binding.textViewDOB.setOnClickListener {
             DatePickerDialog(
                 this,
                 datePicker,
-                calenderdate.get(Calendar.YEAR),
-                calenderdate.get(Calendar.MONTH),
-                calenderdate.get(Calendar.DAY_OF_MONTH),
+                calender.get(Calendar.YEAR),
+                calender.get(Calendar.MONTH),
+                calender.get(Calendar.DAY_OF_MONTH),
             ).show()
         }
 
@@ -95,7 +88,7 @@ class UserInfo : AppCompatActivity() {
             if (!validateFields()) {
                 return@setOnClickListener
             }
-            updateDataInSharedPreference()
+            saveDataInSharedPreference()
             uploadImageToFirebase(imgBitmap)
             finish()
         }
@@ -165,17 +158,17 @@ class UserInfo : AppCompatActivity() {
     }
 
     @SuppressLint("QueryPermissionsNeeded")
+    private fun takePhotoWithCamera() {
+        val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        startActivityForResult(takePictureIntent, 1)
+    }
+
+    @SuppressLint("QueryPermissionsNeeded")
     private fun pickImageFromGallery() {
         val pickPictureIntent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         if (pickPictureIntent.resolveActivity(this.packageManager) != null) {
             startActivityForResult(pickPictureIntent, 2)
         }
-    }
-
-    @SuppressLint("QueryPermissionsNeeded")
-    private fun takePhotoWithCamera() {
-        val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        startActivityForResult(takePictureIntent, 1)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -200,10 +193,10 @@ class UserInfo : AppCompatActivity() {
         }
     }
 
-    private fun StoreImageLocallyAndReturnAddress(imgBitmap: Bitmap?, userId: String?): String? {
+    private fun storeImageLocallyAndReturnAddress(imgBitmap: Bitmap?, userId: String?): String? {
         val directory = this.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
         if (directory != null) {
-            val file = File(directory, userId + ".jpg")
+            val file = File(directory, "$userId.jpg")
             var fileOutputStream: FileOutputStream? = null
             try {
                 fileOutputStream = FileOutputStream(file)
@@ -222,9 +215,9 @@ class UserInfo : AppCompatActivity() {
         return null
     }
 
-    private fun updateDataInSharedPreference() {
+    private fun saveDataInSharedPreference() {
         val editor = sharedPreferences.edit()
-        val imageLink = StoreImageLocallyAndReturnAddress(imgBitmap, userId)
+        val imageLink = storeImageLocallyAndReturnAddress(imgBitmap, userId)
         val currentUser = "${userId}, ${binding.editTextName.text}, ${imageLink}," +
                 "${binding.editTextEmail.text}, ${binding.editTextPhone.text}," +
                 "${binding.textViewDOB.text}"
@@ -238,11 +231,11 @@ class UserInfo : AppCompatActivity() {
         val data = byteArrayOutputStream.toByteArray()
         val path = firebaseStorageReference.child("Photos/${UUID.randomUUID()}.jpg")
         val upload = path.putBytes(data)
-        upload.addOnSuccessListener {
+        upload.addOnSuccessListener { it ->
             val task = it.metadata?.reference?.downloadUrl
             task?.addOnSuccessListener {
-                uri = it
-                updateDataInFirebase(uri)
+                imgUri = it
+                saveDataInFirebase(imgUri)
             }
         }.addOnFailureListener {
             Toast.makeText(this, "Failed to uplaod image!", Toast.LENGTH_SHORT).show()
@@ -250,21 +243,21 @@ class UserInfo : AppCompatActivity() {
         }
     }
 
-    private fun updateDataInFirebase(uri: Uri?) {
-        val userHashMap = hashMapOf<Any, Any>("userID" to userId!!,
+    private fun saveDataInFirebase(uri: Uri?) {
+        val userHashMap = hashMapOf<Any, Any>("userId" to userId!!,
             "name" to binding.editTextName.text.toString(),
             "imgProfile" to uri.toString(),
             "email" to binding.editTextEmail.text.toString(),
             "phone" to binding.editTextPhone.text.toString().toLong(),
             "DOB" to binding.textViewDOB.text.toString())
-        firestore.collection("Users").document(userId!!).set(userHashMap)
+        firestore.collection("Users").document(userId).set(userHashMap)
     }
 }
 
 @SuppressLint("SimpleDateFormat", "SetTextI18n")
-private fun updatedatelabel(calenderdate: Calendar, coll_date : TextView) {
-    val day = SimpleDateFormat("dd").format(calenderdate.time)
-    val month = SimpleDateFormat("MM").format(calenderdate.time)
-    val year = SimpleDateFormat("yyyy").format(calenderdate.time)
-    coll_date.text = "${day}/${month}/${year}"
+private fun updatedatelabel(calender: Calendar, collDate : TextView) {
+    val day = SimpleDateFormat("dd").format(calender.time)
+    val month = SimpleDateFormat("MM").format(calender.time)
+    val year = SimpleDateFormat("yyyy").format(calender.time)
+    collDate.text = "${day}-${month}-${year}"
 }

@@ -29,17 +29,17 @@ class SharedPreferencesFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         viewModel = ViewModelProvider(this)[ViewModel::class.java]
         userAdapter = UserInfoAdapter()
-        binding.recyclerUserList.adapter = userAdapter
-        binding.recyclerUserList.layoutManager = LinearLayoutManager(requireContext())
-        viewModel.getUsersFromSharedPreferences().observe(viewLifecycleOwner, Observer {
+        binding.recyclerUserListSharedPreferences.adapter = userAdapter
+        binding.recyclerUserListSharedPreferences.layoutManager = LinearLayoutManager(requireContext())
+        viewModel.getUsersFromSharedPreferences().observe(viewLifecycleOwner) {
             userAdapter.setList(it)
-        })
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        viewModel.getUsersFromSharedPreferences().observe(viewLifecycleOwner, Observer {
+        viewModel.getUsersFromSharedPreferences().observe(viewLifecycleOwner) {
             userAdapter.setList(it)
-        })
+        }
     }
 }

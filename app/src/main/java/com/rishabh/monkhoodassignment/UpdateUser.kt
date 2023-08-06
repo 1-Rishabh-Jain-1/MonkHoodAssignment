@@ -2,22 +2,23 @@ package com.rishabh.monkhoodassignment
 
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.app.Dialog
 import android.app.ProgressDialog
 import android.content.Context
-import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import android.util.Patterns
 import android.view.ViewGroup
+import android.webkit.URLUtil
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -26,6 +27,7 @@ import com.bumptech.glide.Glide
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageReference
+import com.rishabh.MyApplication
 import com.rishabh.monkhoodassignment.databinding.ActivityUpdateUserBinding
 import com.rishabh.monkhoodassignment.mvvm.ViewModel
 import java.io.ByteArrayOutputStream
@@ -37,19 +39,15 @@ import java.util.UUID
 
 class UpdateUser : AppCompatActivity() {
     private lateinit var binding: ActivityUpdateUserBinding
-    private var uri: Uri? = null
+    private var imgUri: Uri? = null
     private lateinit var firestore : FirebaseFirestore
-    private lateinit var storage: FirebaseStorage
+    private lateinit var firebaseStorage: FirebaseStorage
     private lateinit var progressDialog: ProgressDialog
     private var imgBitmap : Bitmap? = null
     private lateinit var sharedPreferences : SharedPreferences
     private lateinit var firebaseStorageReference: StorageReference
     private var userId : String? = ""
     private lateinit var viewModel : ViewModel
-
-    private enum class IMAGE_MODE{
-        OPEN_CAMERA, OPEN_EXT_STORAGE
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,18 +57,27 @@ class UpdateUser : AppCompatActivity() {
         sharedPreferences = this.getSharedPreferences("Users", Context.MODE_PRIVATE)
         progressDialog = ProgressDialog(this)
         firestore = FirebaseFirestore.getInstance()
-        storage = FirebaseStorage.getInstance()
-        firebaseStorageReference = storage.reference
+        firebaseStorage = FirebaseStorage.getInstance()
+        firebaseStorageReference = firebaseStorage.reference
         viewModel = ViewModel()
         userId = intent.getStringExtra("userId")
+
         viewModel.getUserFromUserId(userId) { user ->
-            uri = Uri.parse(user!!.imgProfile)
-            Glide.with(this).load(user!!.imgProfile).into(binding.imgProfile)
+            imgUri = Uri.parse(user!!.imgProfile)
+            val image = user.imgProfile
+            if (URLUtil.isValidUrl(image)) {
+                Glide.with(this).load(user.imgProfile).into(binding.imgProfile)
+            } else{
+                val bitmap = BitmapFactory.decodeFile(image)
+                binding.imgProfile.setImageBitmap(bitmap)
+            }
+
             binding.editTextName.setText(user.name)
             binding.editTextEmail.setText(user.email)
             binding.editTextPhone.setText(user.phone.toString())
-            binding.textViewDOB.setText(user.dob)
+            binding.textViewDOB.text = user.DOB
         }
+
         binding.editImg.setOnClickListener {
             showImageSelectionOptionDialog()
         }
@@ -84,8 +91,8 @@ class UpdateUser : AppCompatActivity() {
             val day = calendar.get(Calendar.DAY_OF_MONTH)
             val month = calendar.get(Calendar.MONTH)
             val year = calendar.get(Calendar.YEAR)
-            val datePickerDialog = DatePickerDialog(this, {view, year, month, day ->
-                binding.textViewDOB.setText("${day}/${month + 1}/${year}")
+            val datePickerDialog = DatePickerDialog(this, { _, year, month, day ->
+                binding.textViewDOB.text = "${day}/${month + 1}/${year}"
             }, year, month, day)
             datePickerDialog.show()
         }
@@ -98,10 +105,12 @@ class UpdateUser : AppCompatActivity() {
             uploadImageToFirebase(imgBitmap)
             finish()
         }
+
         binding.imgPrevious.setOnClickListener {
             finish()
         }
     }
+
     private fun validateFields(): Boolean {
         if(imgBitmap == null) {
             Toast.makeText(this@UpdateUser, "Select a profile image!", Toast.LENGTH_SHORT).show()
@@ -162,17 +171,17 @@ class UpdateUser : AppCompatActivity() {
     }
 
     @SuppressLint("QueryPermissionsNeeded")
+    private fun takePhotoWithCamera() {
+        val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        startActivityForResult(takePictureIntent, 1)
+    }
+
+    @SuppressLint("QueryPermissionsNeeded")
     private fun pickImageFromGallery() {
         val pickPictureIntent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         if (pickPictureIntent.resolveActivity(this.packageManager) != null) {
             startActivityForResult(pickPictureIntent, 2)
         }
-    }
-
-    @SuppressLint("QueryPermissionsNeeded")
-    private fun takePhotoWithCamera() {
-        val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        startActivityForResult(takePictureIntent, 1)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -197,10 +206,10 @@ class UpdateUser : AppCompatActivity() {
         }
     }
 
-    private fun StoreImageLocallyAndReturnAddress(imgBitmap: Bitmap?, userId: String?): String? {
+    private fun storeImageLocallyAndReturnAddress(imgBitmap: Bitmap?, userId: String?): String? {
         val directory = this.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
         if (directory != null) {
-            val file = File(directory, userId + ".jpg")
+            val file = File(directory, "$userId.jpg")
             var fileOutputStream: FileOutputStream? = null
             try {
                 fileOutputStream = FileOutputStream(file)
@@ -221,12 +230,13 @@ class UpdateUser : AppCompatActivity() {
 
     private fun updateDataInSharedPreference() {
         val editor = sharedPreferences.edit()
-        val imageLink = StoreImageLocallyAndReturnAddress(imgBitmap, userId)
-        val currentUser = "${userId}, ${binding.editTextName.text}, ${imageLink}," +
+        val imageLink = storeImageLocallyAndReturnAddress(imgBitmap, userId)
+        val currentUser = "${userId}, ${binding.editTextName.text}, ${imageLink}, " +
                 "${binding.editTextEmail.text}, ${binding.editTextPhone.text}," +
                 "${binding.textViewDOB.text}"
         editor.putString(userId, currentUser)
         editor.apply()
+        Log.d("ImageCheckFromUpdateUser.kt", "$imageLink")
     }
 
     private fun uploadImageToFirebase(imgBitmap: Bitmap?) {
@@ -235,22 +245,22 @@ class UpdateUser : AppCompatActivity() {
         val data = byteArrayOutputStream.toByteArray()
         val path = firebaseStorageReference.child("Photos/${UUID.randomUUID()}.jpg")
         val upload = path.putBytes(data)
-        upload.addOnSuccessListener {
+        upload.addOnSuccessListener { it ->
             val task = it.metadata?.reference?.downloadUrl
             task?.addOnSuccessListener {
-                uri = it
-                updateDataInFirebase(uri)
+                imgUri = it
+                updateDataInFirebase(imgUri)
             }
         }.addOnFailureListener {
-            Toast.makeText(this, "Failed to uplaod image!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Failed to upload image!", Toast.LENGTH_SHORT).show()
 
         }
     }
 
-    private fun updateDataInFirebase(uri: Uri?) {
-        val userHashMap = hashMapOf<Any, Any>("userID" to userId!!,
+    private fun updateDataInFirebase(imgUri: Uri?) {
+        val userHashMap = hashMapOf<Any, Any>("userId" to userId!!,
             "name" to binding.editTextName.text.toString(),
-            "imgProfile" to uri.toString(),
+            "imgProfile" to imgUri.toString(),
             "email" to binding.editTextEmail.text.toString(),
             "phone" to binding.editTextPhone.text.toString().toLong(),
             "DOB" to binding.textViewDOB.text.toString())

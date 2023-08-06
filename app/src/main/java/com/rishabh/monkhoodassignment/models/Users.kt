@@ -6,6 +6,6 @@ data class Users (
     val imgProfile : String = "",
     val email : String = "",
     val phone : Long? = null,
-    val dob : String = ""
+    val DOB : String? = ""
 )
 

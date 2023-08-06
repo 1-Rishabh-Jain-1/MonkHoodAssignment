@@ -30,8 +30,8 @@ class FirebaseFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         viewModel = ViewModelProvider(this)[ViewModel::class.java]
         userAdapter = UserInfoAdapter()
-        binding.recyclerUserList.adapter = userAdapter
-        binding.recyclerUserList.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerUserListFirebase.adapter = userAdapter
+        binding.recyclerUserListFirebase.layoutManager = LinearLayoutManager(requireContext())
         viewModel.getUsersFromFirebase().observe(viewLifecycleOwner, Observer {
             userAdapter.setList(it)
         })
